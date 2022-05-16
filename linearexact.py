@@ -68,10 +68,10 @@ if __name__ == "__main__":
     parser.add_argument('--demo_phi', default = None, type = int)
     parser.add_argument('--demo_phi_val', default = None)
     parser.add_argument('--neg_class', default = 0, type = int)
-    parser.add_argument('--regularization', type = bool, default = 0)
+    parser.add_argument('--regularization', type = bool, default = 1)
     parser.add_argument('--max_label_flips', default = None, type=int)
     parser.add_argument('--regression', type = bool, default = 0)
-    parser.add_argument('--tolerance', type = float, default = None)
+    parser.add_argument('--tolerance', type = float, default = 0)
     parser.add_argument('--find_lambda', type = bool, default = 0)
     args = parser.parse_args()
 

@@ -126,7 +126,7 @@ if __name__ == "__main__":
     parser.add_argument('--min_group_val', default = None)
     parser.add_argument('--gender_val', default = None)
     parser.add_argument('--accuracy', default=False, type=bool)
-    parser.add_argument('--tolerance', type=float, default=None) # accuracy-robustness tradeoff
+    parser.add_argument('--tolerance', type=float, default=0) # accuracy-robustness tradeoff
     
     args = parser.parse_args()
     args.find_lambda = False

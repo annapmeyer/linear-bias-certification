@@ -237,10 +237,6 @@ class Perturbation_Model:
         n = len(self.lin_reg.x_test)
         robust_pct_overall = self.eval_test_set_overall()
         robust_pct_men, robust_pct_women, robust_pct_maj, robust_pct_min = -1, -1, -1, -1
-        if "ali_n" in self.data_obj.name:
-            all_results = self.eval_n()
-            return robust_pct_overall, robust_pct_men, robust_pct_women, all_results, robust_pct_min
-        
         if self.gender_index is not None:
             robust_pct_men, robust_pct_women = self.eval_test_set_gender()
         if self.maj_group_index is not None:
