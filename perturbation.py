@@ -7,9 +7,10 @@ import interval
 ''' Keep track of worst-case y perturbations and the resulting thetas '''
 
 class Target:
-    def __init__(self, target_index, target_val):
+    def __init__(self, target_index, target_val, target_dir=0):
         self.target_index = target_index
         self.target_val = target_val
+        self.target_dir = target_dir
         self.specific_val = True
         if target_index is None:
             self.active = False
@@ -51,8 +52,8 @@ class Theta_Perturbation:
                 self.row_copy_max[i][0, invalid_indices] = -1
 
     def update_bounds(self, dim):
-        self.lower[dim] = np.matmul(self.lin_reg.matr_prod[dim],np.transpose(self.ymin_array[dim]))[0]
-        self.upper[dim] = np.matmul(self.lin_reg.matr_prod[dim], np.transpose(self.ymax_array[dim]))[0]
+        self.lower[dim] = np.matmul(self.lin_reg.matr_prod[dim],self.ymin_array[dim])[0]
+        self.upper[dim] = np.matmul(self.lin_reg.matr_prod[dim], self.ymax_array[dim])[0]
 
     def load_theta(self, fold, neg_class):
         for i in range(self.dim):
@@ -60,17 +61,17 @@ class Theta_Perturbation:
             self.perturbed_indices_max[i] = np.load("checkpoint_"+self.data_name + "_max_dim" + str(i) + "_fold" + str(fold) + ".npy").tolist()
 
             for j in self.perturbed_indices_min[i]:
-                self.row_copy_min[i][0,j] = -1
-                if self.ymin_array[i][0,j] == neg_class:
-                    self.ymin_array[i][0,j] = 1
+                self.row_copy_min[i][j,0] = -1
+                if self.ymin_array[i][j,0] == neg_class:
+                    self.ymin_array[i][j,0] = 1
                 else:
-                    self.ymin_array[i][0,j] = neg_class 
+                    self.ymin_array[i][j,0] = neg_class 
             for j in self.perturbed_indices_max[i]:
-                self.row_copy_max[i][0,j] = -1
-                if self.ymax_array[i][0,j] == neg_class: 
-                    self.ymax_array[i][0,j] = 1
+                self.row_copy_max[i][j,0] = -1
+                if self.ymax_array[i][j,0] == neg_class: 
+                    self.ymax_array[i][j,0] = 1
                 else:
-                    self.ymax_array[i][0,j] = neg_class
+                    self.ymax_array[i][j,0] = neg_class
             
             self.update_bounds(i)
         
@@ -96,7 +97,8 @@ class Perturbation_Model:
         self.label_per = args.label_per
         self.target = target
         self.gender_index = args.gender_index
-        self.gender_val = args.gender_val
+        self.male_val = args.male_val
+        self.female_val = args.female_val
         self.maj_group_index = args.maj_group_index
         self.min_group_index = args.min_group_index
         self.maj_group_val = args.maj_group_val
@@ -120,11 +122,11 @@ class Perturbation_Model:
                 self.theta.perturbed_indices_min[i].append(max_index)
 
                 if self.lin_reg.matr_prod[i,max_index] >= 0:
-                    self.theta.ymax_array[i][0,max_index] += self.label_per
-                    self.theta.ymin_array[i][0,max_index] -= self.label_per
+                    self.theta.ymax_array[i][max_index,0] += self.label_per
+                    self.theta.ymin_array[i][max_index,0] -= self.label_per
                 else:
-                    self.theta.ymax_array[i][0,max_index] -= self.label_per
-                    self.theta.ymin_array[i][0,max_index] += self.label_per
+                    self.theta.ymax_array[i][max_index,0] -= self.label_per
+                    self.theta.ymin_array[i][max_index,0] += self.label_per
 
     def perturb_theta_cat(self, labels_flip):
         d = self.theta.dim
@@ -132,37 +134,37 @@ class Perturbation_Model:
 
         for i in range(d):
             total_dec, total_incr, iter = 0, 0, 0
-            while total_dec < labels_flip and iter<self.lin_reg.y_train.shape[1]:
+            while total_dec < labels_flip and (iter< self.lin_reg.y_train.shape[0]):
                 iter+=1
                 max_index = np.where(self.theta.row_copy_min[i] == (np.amax(self.theta.row_copy_min[i])))[1][0]
                 if self.theta.row_copy_min[i][0,max_index] == -1: # edge case, flipped all labels
-                    iter=self.lin_reg.y_train.shape[1]
+                    iter=self.lin_reg.y_train.shape[0]
                     continue
                 self.theta.row_copy_min[i][0,max_index] = -1 # all entries in row-copy are pos
                 
-                if self.lin_reg.matr_prod[i, max_index] >= 0 and self.theta.ymin_array[i][0,max_index] == 1:
-                    self.theta.ymin_array[i][0,max_index] = neg_class
+                if self.lin_reg.matr_prod[i, max_index] >= 0 and self.theta.ymin_array[i][max_index,0] == 1:
+                    self.theta.ymin_array[i][max_index,0] = neg_class
                     self.theta.perturbed_indices_min[i].append(max_index)
                     total_dec +=1  
-                elif self.lin_reg.matr_prod[i, max_index] <= 0 and self.theta.ymin_array[i][0,max_index] == neg_class: 
-                    self.theta.ymin_array[i][0,max_index] = 1
+                elif self.lin_reg.matr_prod[i, max_index] <= 0 and self.theta.ymin_array[i][max_index,0] == neg_class: 
+                    self.theta.ymin_array[i][max_index,0] = 1
                     self.theta.perturbed_indices_min[i].append(max_index)
                     total_dec +=1 
             iter = 0 
-            while total_incr < labels_flip and iter<self.lin_reg.y_train.shape[1]:
+            while total_incr < labels_flip and (iter<self.lin_reg.y_train.shape[0]):
                 iter += 1
                 max_index = np.where(self.theta.row_copy_max[i] == (np.amax(self.theta.row_copy_max[i])))[1][0]
                 if self.theta.row_copy_max[i][0,max_index] == -1: # edge case, flipped all labels
-                    iter=self.lin_reg.y_train.shape[1]
+                    iter=self.lin_reg.y_train.shape[0]
                     continue
                 self.theta.row_copy_max[i][0, max_index] = -1
 
-                if self.lin_reg.matr_prod[i,max_index] >= 0 and self.theta.ymax_array[i][0, max_index] == neg_class: 
-                    self.theta.ymax_array[i][0, max_index] = 1
+                if self.lin_reg.matr_prod[i,max_index] >= 0 and self.theta.ymax_array[i][max_index,0] == neg_class: 
+                    self.theta.ymax_array[i][max_index,0] = 1
                     self.theta.perturbed_indices_max[i].append(max_index)
                     total_incr += 1
-                elif self.lin_reg.matr_prod[i,max_index] <= 0 and self.theta.ymax_array[i][0, max_index] == 1: 
-                    self.theta.ymax_array[i][0, max_index] = neg_class
+                elif self.lin_reg.matr_prod[i,max_index] <= 0 and self.theta.ymax_array[i][ max_index,0] == 1: 
+                    self.theta.ymax_array[i][max_index,0] = neg_class
                     self.theta.perturbed_indices_max[i].append(max_index)
                     total_incr += 1
 
@@ -172,7 +174,6 @@ class Perturbation_Model:
         else:
             self.perturb_theta_cat(labels_flip)
 
-        
         for i in range(self.theta.dim):
             self.theta.update_bounds(i)
 
@@ -180,6 +181,8 @@ class Perturbation_Model:
     def eval_core_loop(self,n,theta,failure,demo_index,demo_val):
         robust, count = 0, 0
         for i in range(n):
+            # TO DO make sure we're intelligent about demo_index -- is it computed before or 
+            # after removing the ignore_indices?
             if demo_index is not None and (float(demo_val) == -1):
                 if self.lin_reg.x_test[i][0,int(demo_index)] == 0:
                     continue
@@ -217,8 +220,8 @@ class Perturbation_Model:
         if self.gender_index is not None:
             n = len(self.lin_reg.x_test)
             failure, theta = [], self.theta.get_theta()
-            robust_men, failure = self.eval_core_loop(n, theta, failure, self.gender_index, self.gender_val)
-            robust_women, failure = self.eval_core_loop(n, theta, failure, self.gender_index, 0)
+            robust_men, failure = self.eval_core_loop(n, theta, failure, self.gender_index, self.male_val)
+            robust_women, failure = self.eval_core_loop(n, theta, failure, self.gender_index, self.female_val)
             return robust_men, robust_women
         else:
             return -1, -1

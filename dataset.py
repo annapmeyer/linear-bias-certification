@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from sklearn.preprocessing import StandardScaler
 
 # class copied from Rosenfeld et al.'s code (http://www.cs.cmu.edu/~elan/)
 class Embedder(nn.Module):
@@ -52,7 +53,7 @@ def mnist_special(neg_class):
 
 class Dataset:
     def __init__(self, name, train_filename, test_filename, label_col, target, args):        
-        if target.target_index is not None:
+        if target is not None and target.target_index is not None:
             self.name = name + "_t" + str(target.target_index) + "_v" + str(target.target_val)
         else:
             self.name = name
@@ -85,21 +86,38 @@ class Dataset:
         y_train = pd.Series(y_train_np)
         y_test = pd.Series(y_test_np)
 
-    def load_data(self, fold):
+    def load_data(self, fold = -1, scale = False):
 
         if self.name == "mnist":
             return mnist_special(self.neg_class)
 
-        train = pd.read_csv(self.train_filename + str(fold) + ".csv")
-        test = pd.read_csv(self.test_filename + str(fold) + ".csv")
+        if '.npy' in self.train_filename:
+            x_train = pd.DataFrame(np.load(self.train_filename))
+            y_train = pd.Series(np.load(self.train_filename.split('.npy')[0] + '_labels.npy'))
+            x_test = pd.DataFrame(np.load(self.test_filename))
+            y_test = pd.Series(np.load(self.test_filename.split('.npy')[0] + '_labels.npy'))
+        else:
+            filename_train = self.train_filename if fold == -1 else self.train_filename + str(fold)
+            filename_test = self.test_filename if fold == -1 else self.test_filename + str(fold)
+            filename_train += ".csv"
+            filename_test += ".csv"
+            train = pd.read_csv(filename_train)
+            test = pd.read_csv(filename_test)
 
-        y_train = train[self.label_col]
-        x_train = train.drop(columns=[self.label_col])
-        y_test = test[self.label_col]
-        x_test = test.drop(columns=[self.label_col])
+            y_train = train[self.label_col]
+            x_train = train.drop(columns=[self.label_col])
+            y_test = test[self.label_col]
+            x_test = test.drop(columns=[self.label_col])
 
         self.reconcile_neg_class(y_train, y_test)
         
-        self.add_intercept_column(x_train,x_test)
+        self.add_intercept_column(x_train, x_test)
 
-        return np.matrix(x_train), np.matrix(y_train), np.matrix(x_test), np.matrix(y_test)
+        if scale:
+            scaler = StandardScaler()
+            x_train = pd.DataFrame(scaler.fit_transform(x_train))
+            x_test = pd.DataFrame(scaler.transform(x_test))
+        else:
+            scaler = None
+            
+        return np.matrix(x_train), np.matrix(y_train).T, np.matrix(x_test), np.matrix(y_test).T, scaler

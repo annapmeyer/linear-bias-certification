@@ -1,14 +1,21 @@
 import numpy as np
+from sklearn.metrics import f1_score
 
 ''' Helper functions to compute (X^T X)^{-1} X^T y.
     Also finds the value of lambda for the given dataset and tolerance. 
     Note that tolerance is the accuracy/robustness tradeoff, i.e., the maximal
     acceptable drop in accuracy in percentage points. Lambda can be computed with
     find_lambda.py. 
+
+    theta = (x^T X - lambda I)^{-1} X^T y
 '''
 
-def compute_matr_prod(X, y, reg, reg_val):
+def compute_matr_prod(X, reg_val, ignore_indices=None):
     xT = np.transpose(X)
+    if ignore_indices is not None:
+        # TO DO remove the specified columns from X so that the (e.g.) sensitive attribute
+        # is not included in the training
+        pass
     if reg_val is not None:
         reg_prod = np.matmul(np.transpose(X), X) + reg_val * np.identity(X.shape[1])
         inv_prod = np.linalg.pinv(reg_prod)
@@ -16,27 +23,22 @@ def compute_matr_prod(X, y, reg, reg_val):
         inv_prod = np.linalg.pinv(np.matmul(xT, X))
     return np.matmul(inv_prod, xT)
 
-def probe_accuracy(lin_reg, x_test, y_test, neg_class):
-    theta = np.matmul(lin_reg.matr_prod, np.transpose(lin_reg.y_train))
+def probe_accuracy(lin_reg, x_test, y_test, neg_class, metric='standard'):
+    theta = np.matmul(lin_reg.matr_prod, lin_reg.y_train)
     acc = 0
 
     if neg_class == 0:
         threshold = 0.5
     else:
         threshold = 0
-    for x in range(len(x_test)):
-        pred = np.matmul(x_test[x], theta)[0,0]
-        if pred > threshold:
-            prediction = 1
-        else: 
-            prediction = neg_class
-        if y_test[0,x] > threshold:
-            y_pred = 1
-        else:
-            y_pred = neg_class
-        if prediction == y_pred:
-            acc += 1
-    return acc/len(x_test)
+    preds = np.matmul(x_test, theta)
+    preds[preds > threshold] = 1
+    preds[preds <= threshold] = neg_class
+
+    if metric == 'f1':
+        return f1_score(y_test, preds, average='binary')
+    else:
+        return np.sum(preds == y_test) / len(y_test)
 
 def probe_accuracy_cont(lin_reg,x_test,y_test, args):
     theta = np.matmul(lin_reg.matr_prod, np.transpose(lin_reg.y_train))
@@ -59,48 +61,70 @@ def probe_accuracy_cont(lin_reg,x_test,y_test, args):
 def lookup_tolerance(dataset_name, tolerance):
     tol0 = {
         'mnist' : 0.042,
-        'income' : 20,
+        'income' : 4.4, #  20,
+        'incomega' : 22,
+        'incomemd' : 1,
+        'incomela' : 44,
+        'incomeor' : 58,
         'compas' : 480,
         'compas_bal_whitenon': 480,
         'compas_bal_whiteblackall': 480,
         'compas_bal_whiteblack': 480,
-        'demo' : 0.92
+        'demo' : 0.92,
+        'heloc' : 0.9,
+        'hmda' : 1000,
     }
     tol01 = {
-        'income' : 240,
+        'income' : 1200, # 240,
         'compas' : 480,
         'mnist' : 0.18,
-        'demo' : 2.2
+        'demo' : 2.2,
+        'heloc' : 8.6,
+        'hmda' :50000,# 1200,
     }
     tol02 = {
-        'income' : 240,
+        'income' : 2000, # 240,
         'compas' : 520,
         'mnist' : 1.2,
-        'demo' : 7.8
+        'demo' : 7.8,
+        'heloc' : 54,
+        'hmda': 100000,#2200,
     }
     tol05 = {
-        'income' : 700,
+        'income' : 2800, # 700,
         'compas' : 900,
         'mnist' : 84,
-        'demo' : 20
+        'demo' : 20,
+        'heloc' : 460,
+        'hmda' : 3200,
     }
     tol1 = {
         'mnist' : 1200,
-        'income' : 3400,
+        'income' : 3200, # 3400,
         'compas' : 1200,
-        'demo' : 46
+        'demo' : 46,
+        'heloc' : 2200,
+        'hmda' : 10000000000,#4400,
     }
     tol15 = {
         'mnist' : 8000,
         'compas' : 1400,
-        'income' : 5400,
+        'income' : 3600, # 5400,
         'demo' : 64,
+        'heloc' : 6600,
+        'hmda' : 10000000000,#7000,
     }
     tol2 = {
         'mnist' : 14000,
         'compas': 2000,
-        'income' :  6000,
+        'income' : 7600, # 6000,
         'demo' : 120,
+        'heloc': 16000,
+        'hmda' : 10000000000,#10000,
+        'incomega': 8000,
+        'incomemd' : 9200,
+        'incomeor' : 5200,
+        'incomela' : 6000,
     }
     if tolerance == 0:
         return tol0.get(dataset_name, "dataset name not found")
@@ -132,10 +156,12 @@ class Linear_Regression:
         elif args.find_lambda:
             reg_val = args.reg_val
         elif args.tolerance is not None:
-            if 'income' in dataset_name:
-                dataset_name = 'income'
+            # if 'income' in dataset_name:
+            #     dataset_name = 'income'
             reg_val = lookup_tolerance(dataset_name, args.tolerance)
+            if reg_val == "dataset name not found":
+                raise ValueError("dataset name not found")
         else:
             reg_val = None
 
-        self.matr_prod = compute_matr_prod(self.x_train, self.y_train, args.regularization, reg_val)
+        self.matr_prod = compute_matr_prod(self.x_train, reg_val)

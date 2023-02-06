@@ -5,6 +5,11 @@ import linear_eq
 import exact_solver
 import argparse
 import numpy as np
+import datetime
+
+
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 ''' Implements the exact certification procedure (section 4 of paper)'''
 
@@ -23,21 +28,30 @@ def eval_sample(theta, x):
 def main(args):
     dataset_name = args.dataset
     label_col = 'label'
+    
+    args.orig_target_val = args.target_val
 
-    train_filename = args.datadir + "/train_" + dataset_name + "_"
-    test_filename =  args.datadir + "/train_" + dataset_name + "_"
-
-    target = perturbation.Target(args.target_index, args.target_val)
-    data_obj = dataset.Dataset(dataset_name, train_filename, test_filename, label_col, target, args)
+    target = perturbation.Target(args.target_index, args.target_val, target_dir=args.target_dir)
+    data_obj = dataset.Dataset(dataset_name, args.data_train, args.data_test, label_col, target, args)
 
     if ('demo' in dataset_name) or ('synth' in dataset_name):
         num_folds = 4
-    elif 'mnist' in dataset_name:
+    elif ('mnist' in dataset_name) or ('fitz' in dataset_name):
         num_folds = 1
     else:
         num_folds = 10
     for i in range(num_folds):
-        x_train, y_train, x_test, y_test = data_obj.load_data(i)
+        if num_folds == 1:
+            x_train, y_train, x_test, y_test, scaler = data_obj.load_data(scale=args.scale)
+        else:
+            x_train, y_train, x_test, y_test, scaler = data_obj.load_data(fold=i, scale=args.scale)
+        if scaler is not None and (args.target_index is not None):
+            # create an array that is all 0's except for target_val in target_index
+            ary = np.zeros(x_test.shape[1])
+            ary[args.target_index] = args.orig_target_val
+            args.target_val = float(scaler.transform(ary.reshape(1, -1))[0,args.target_index])
+
+        target = perturbation.Target(args.target_index, args.target_val, target_dir=args.target_dir)
         lin_reg = linear_eq.Linear_Regression(dataset_name, x_train, y_train, x_test, y_test, args)
         solver = exact_solver.Exact_Solver(lin_reg, data_obj, target, args)
 
@@ -53,18 +67,23 @@ def main(args):
             results.append(solver.perturbation_size)
 
         print("{args:",args,"},{fold:",str(i),"},{count:",count,"},{results:",results,"}")
+        break
    
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('dataset')
-    parser.add_argument('datadir')
+    parser.add_argument('data_train') # complete filepath to train data
+    parser.add_argument('data_test') # complete filepath to test data
     parser.add_argument('start', type=int)
     parser.add_argument('num_to_run', type=int)
-    parser.add_argument('--label_per', default = 0, type = float)
+    parser.add_argument('--label_per', default = 0, type = float) # for regression
     parser.add_argument('--robust_rad', default = 0, type = float)
-    parser.add_argument('--target_index', default = None, type = int)
+    parser.add_argument('--target_index', default = None, type = int) # note, HMDA 10=race (1=black) and 11=gender (1=female)
     parser.add_argument('--target_val', default = None, type = float)
+    # 1 if we can change -1 labels to 1, -1 for vice-versa
+    # so 1 means we are assisting the 'disadvantaged' group and -1 is penalizing the 'advantaged' group
+    parser.add_argument('--target_dir', type=int, default=1) 
     parser.add_argument('--demo_phi', default = None, type = int)
     parser.add_argument('--demo_phi_val', default = None)
     parser.add_argument('--neg_class', default = 0, type = int)
@@ -73,6 +92,7 @@ if __name__ == "__main__":
     parser.add_argument('--regression', type = bool, default = 0)
     parser.add_argument('--tolerance', type = float, default = 0)
     parser.add_argument('--find_lambda', type = bool, default = 0)
+    parser.add_argument('--scale', type=bool, default=False)
     args = parser.parse_args()
 
     if args.target_index == -1:

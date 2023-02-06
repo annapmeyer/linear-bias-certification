@@ -3,6 +3,7 @@ import argparse
 import linear_eq
 import dataset
 import perturbation
+from sklearn.model_selection import train_test_split
 
 ''' Find an appropriate lambda to use for a specified accuracy/robustness tradeoff '''
 
@@ -10,31 +11,42 @@ import perturbation
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('dataset')
-    parser.add_argument('datadir')
+    parser.add_argument('data_train') # complete filepath to train data
+    parser.add_argument('--data_test', type=str, default=None) # complete filepath to test data
+    parser.add_argument('--data_val', type=str, default=None) # complete filepath to validation data
     parser.add_argument('--tolerance',type=float, default=0) # tradeoff
     parser.add_argument('--neg_class',type=int, default=0)
-    parser.add_argument('--max_iter',type=int, default=10) # how many times to change and test lambda
     parser.add_argument('--regression', type=bool, default=0)
     parser.add_argument('--robust_rad', type=float, default=0)
-    
+    parser.add_argument('--ignore_indices', type=int, nargs='+', default=None) # TO DO support list
+    parser.add_argument('--scale', type=bool, default=False)
 
     args = parser.parse_args()
     args.regularization = True
     args.find_lambda = True
 
+    assert (args.data_test is not None) or (args.data_val is not None), "you must specify either a test or validation set"
+
     dataset_name = args.dataset
+    metric = 'standard'
+    if 'fitz' in dataset_name:
+        metric = 'f1'
     label_col = 'label'
     args.tolerance = args.tolerance * 0.01 # convert pct to fraction
 
-    train_filename = args.datadir + "/train_" + dataset_name + "_" 
-    val_filename = args.datadir + "/val_" + dataset_name + "_"
+    # train_filename = args.datadir + "/train_" + dataset_name + "_" 
+    # val_filename = args.datadir + "/val_" + dataset_name + "_"
 
     target = perturbation.Target(None, None) # include so Dataset doesn't break
-    data_obj = dataset.Dataset(dataset_name, train_filename, val_filename, label_col, target, args)
+    if args.data_val is None:
+        # set aside 20% of training data for validation using train_test_split
+        data_obj = dataset.Dataset(dataset_name, args.data_train, args.data_test, label_col, target, args)
+    else:
+        data_obj = dataset.Dataset(dataset_name, args.data_train, args.data_val, label_col, target, args)
 
-    if ('compas' in dataset_name) or ('income' in dataset_name):
+    if ('compas' in dataset_name) or ('income' in dataset_name) or ('heloc' in dataset_name):
         num_folds = 10
-    elif dataset_name == 'mnist':
+    elif (dataset_name == 'mnist') or ('fitz' in dataset_name):
         num_folds = 1
     else:
         num_folds = 4
@@ -48,32 +60,35 @@ if __name__ == "__main__":
     for l in lambdas:
         cur_scores = []
         for i in range(num_folds):
-            x_train, y_train, x_val, y_val = data_obj.load_data(i)
+            if num_folds == 1:
+                x_train, y_train, x_val, y_val, _ = data_obj.load_data(scale=args.scale)
+            else:
+                x_train, y_train, x_val, y_val, _ = data_obj.load_data(i, scale=args.scale)
+            if args.ignore_indices is not None:
+                # TO DO remove unnecessary values from X
+                pass
+            if args.data_val is None:
+                x_train, x_val, y_train, y_val = train_test_split(x_train, np.array(y_train), test_size=0.2, random_state=1129)
             args.reg_val = l
-            lin_reg = linear_eq.Linear_Regression(dataset_name,x_train, y_train, x_val, y_val, args)
+            lin_reg = linear_eq.Linear_Regression(dataset_name, x_train, y_train, x_val, y_val, args)
             if args.regression:
                 acc, otheracc = linear_eq.probe_accuracy_cont(lin_reg, x_val, y_val, args)
             else:
-                acc = linear_eq.probe_accuracy(lin_reg, x_val, y_val, args.neg_class)
+                acc = linear_eq.probe_accuracy(lin_reg, x_val, y_val, args.neg_class, metric=metric)
             cur_scores.append(acc)
         scores.append(sum(cur_scores)/len(cur_scores))
     if args.tolerance == 0:
         if args.regression:
-            print("scores are ",scores)
             index_best = max(np.where(np.array(scores) == min(scores))[0])
         else:
             index_best = max(np.where(np.array(scores) == max(scores))[0])
     else: 
         if args.regression:
             index_best = max(np.where(np.array(scores) <= min(scores) + args.tolerance)[0])
-            print("scores are ",scores, " and best score has to be at least ",min(scores)+args.tolerance)
-            print("np where is ",np.where(np.array(scores) <= min(scores) + args.tolerance))
         else:
-            print("scores are ",scores, " and best score has to be at least ",max(scores)-args.tolerance)
-            print("np where is ",np.where(np.array(scores) >= max(scores) - args.tolerance))
             index_best = max(np.where(np.array(scores) >= max(scores) - args.tolerance)[0])
     best_l = lambdas[index_best]
-    print("best lambda is ",best_l)
+    print("best lambda (round 1) is ",best_l)
     if args.regression:
         min_score_part_one = min(scores)
     else:
@@ -94,9 +109,14 @@ if __name__ == "__main__":
         cur_scores = []
         for i in range(num_folds):
             args.reg_val = test_l
-            x_train, y_train, x_val, y_val = data_obj.load_data(i)
+            if num_folds == 1:
+                x_train, y_train, x_val, y_val, _ = data_obj.load_data(scale=args.scale)
+            else:
+                x_train, y_train, x_val, y_val, _ = data_obj.load_data(i, scale=args.scale)
+            if args.data_val is None:
+                x_train, x_val, y_train, y_val = train_test_split(x_train, np.array(y_train), test_size=0.2, random_state=1129)
             lin_reg = linear_eq.Linear_Regression(dataset_name, x_train, y_train, x_val, y_val, args)
-            acc = linear_eq.probe_accuracy(lin_reg, x_val, y_val, args.neg_class)
+            acc = linear_eq.probe_accuracy(lin_reg, x_val, y_val, args.neg_class, metric=metric)
             cur_scores.append(acc)
         scores.append(sum(cur_scores)/len(cur_scores))
     for v in vals:
@@ -104,9 +124,14 @@ if __name__ == "__main__":
         cur_scores = []
         for i in range(num_folds):
             args.reg_val = test_l
-            x_train, y_train, x_val, y_val = data_obj.load_data(i)
+            if num_folds == 1:
+                x_train, y_train, x_val, y_val, _ = data_obj.load_data(scale=args.scale)
+            else:  
+                x_train, y_train, x_val, y_val, _ = data_obj.load_data(i, scale=args.scale)
+            if args.data_val is None:
+                x_train, x_val, y_train, y_val = train_test_split(x_train, np.array(y_train), test_size=0.2, random_state=1129)
             lin_reg = linear_eq.Linear_Regression(dataset_name, x_train, y_train, x_val, y_val, args)
-            acc = linear_eq.probe_accuracy(lin_reg, x_val, y_val, args.neg_class)
+            acc = linear_eq.probe_accuracy(lin_reg, x_val, y_val, args.neg_class, metric=metric)
             cur_scores.append(acc)
         scores.append(sum(cur_scores)/len(cur_scores))
         if not args.regression:
@@ -128,4 +153,4 @@ if __name__ == "__main__":
     else:
         best_l = best_l + vals[index_best-len(v_rev)]*best_l
 
-    print("best lambda is ",best_l)
+    print("best lambda (final) is ",best_l)

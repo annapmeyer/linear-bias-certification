@@ -22,9 +22,32 @@ class Exact_Solver:
         if self.target.target_val == -1:
             invalid_indices = np.where(np.transpose(self.lin_reg.x_train)[self.target.target_index] == 0)[1]
             matr_prod_x_abs[0,invalid_indices] = -1
+
+            if self.target.target_dir == 1:
+                # can only change labels that have neg_class.
+                invalid_indices = np.where(np.transpose(self.lin_reg.x_train)[self.target.target_index] == 1)[1]
+                # filter invalid indices to only include those with self.lin_reg.y_train == self.neg_class
+                invalid_indices = invalid_indices[np.where(self.lin_reg.y_train[invalid_indices] == self.data_obj.neg_class)[0]]
+                matr_prod_x_abs[0,invalid_indices] = -1
+            elif self.target.target_dir == -1:
+                # can only change labels that have neg_class.
+                invalid_indices = np.where(np.transpose(self.lin_reg.x_train)[self.target.target_index] == 1)[1]
+                invalid_indices = invalid_indices[np.where(self.lin_reg.y_train[invalid_indices] == 1)[0]]
+                matr_prod_x_abs[0,invalid_indices] = -1
         else:
             invalid_indices = np.where(np.transpose(self.lin_reg.x_train)[self.target.target_index] != self.target.target_val)[1]
             matr_prod_x_abs[0,invalid_indices] = -1
+            if self.target.target_dir == 1:
+                # can only change labels that have neg_class.
+                invalid_indices = np.where(np.transpose(self.lin_reg.x_train)[self.target.target_index] == self.target.target_val)[1]
+                # filter invalid indices to only include those with self.lin_reg.y_train == self.neg_class
+                invalid_indices = invalid_indices[np.where(self.lin_reg.y_train[invalid_indices] == 1)[0]]
+                matr_prod_x_abs[0,invalid_indices] = -1
+            elif self.target.target_dir == -1:
+                # can only change labels to neg_class
+                invalid_indices = np.where(np.transpose(self.lin_reg.x_train)[self.target.target_index] == self.target.target_val)[1]
+                invalid_indices = invalid_indices[np.where(self.lin_reg.y_train[invalid_indices] == self.data_obj.neg_class)[0]]
+                matr_prod_x_abs[0,invalid_indices] = -1
         return matr_prod_x_abs
 
     def find_perturbation_regression(self, x):
@@ -88,13 +111,13 @@ class Exact_Solver:
             threshold, multiplier = 0.5, 1
         else:
             threshold, multiplier = 0, 2
-        if np.matmul(np.transpose(np.matmul(self.lin_reg.matr_prod, np.transpose(self.lin_reg.y_train))), np.transpose(x))[0,0] > threshold: 
+        if np.matmul(np.transpose(np.matmul(self.lin_reg.matr_prod, self.lin_reg.y_train)), np.transpose(x))[0,0] > threshold: 
             orig_label = 1
             goal_label = neg_class
         else:
             orig_label = neg_class 
             goal_label = 1
-        cur_label = np.matmul(np.transpose(np.matmul(self.lin_reg.matr_prod, np.transpose(self.lin_reg.y_train))), np.transpose(x))[0,0]
+        cur_label = np.matmul(np.transpose(np.matmul(self.lin_reg.matr_prod, self.lin_reg.y_train)), np.transpose(x))[0,0]
         matr_prod_x = np.matmul(x, self.lin_reg.matr_prod)
         matr_prod_x_abs = np.absolute(copy.deepcopy(matr_prod_x))
 
@@ -104,7 +127,7 @@ class Exact_Solver:
         same=True
         used_indices = []
         iter = 0
-        while same == True and iter < self.lin_reg.y_train.shape[1]:
+        while same == True and iter < self.lin_reg.y_train.shape[0]:
             iter+=1
             max_index = np.where(matr_prod_x_abs == (np.amax(matr_prod_x_abs)))[1][0]
             if matr_prod_x_abs[0,max_index] == -1:
@@ -113,35 +136,38 @@ class Exact_Solver:
             matr_prod_x_abs[0,max_index] = -1
 
             if orig_label - goal_label > 0: # orig label 1, goal -1: want to decrease
-                if matr_prod_x[0,max_index] > 0 and self.lin_reg.y_train[0,max_index] == 1: 
-                    self.y_mod_min[0,max_index] = neg_class 
+                if matr_prod_x[0,max_index] > 0 and self.lin_reg.y_train[max_index,0] == 1: 
+                    self.y_mod_min[max_index,0] = neg_class 
                     cur_label -= multiplier * matr_prod_x[0,max_index] 
                     used_indices.append(max_index) 
-                elif matr_prod_x[0,max_index] < 0 and self.lin_reg.y_train[0,max_index] == neg_class: 
-                    self.y_mod_min[0,max_index] = 1
+                elif matr_prod_x[0,max_index] < 0 and self.lin_reg.y_train[max_index,0] == neg_class: 
+                    self.y_mod_min[max_index,0] = 1
                     cur_label += multiplier * matr_prod_x[0,max_index] 
                     used_indices.append(max_index)
+
             else: # orig label -1, goal 1
-                if matr_prod_x[0,max_index] > 0 and self.lin_reg.y_train[0,max_index] == neg_class: 
-                    self.y_mod_min[0,max_index] = 1
+                if matr_prod_x[0,max_index] > 0 and self.lin_reg.y_train[max_index,0] == neg_class: 
+                    self.y_mod_min[max_index,0] = 1
                     cur_label += multiplier * matr_prod_x[0,max_index] 
                     used_indices.append(max_index) 
-                elif matr_prod_x[0,max_index] < 0 and self.lin_reg.y_train[0,max_index] == 1:
-                    self.y_mod_min[0,max_index] = neg_class 
+
+                elif matr_prod_x[0,max_index] < 0 and self.lin_reg.y_train[max_index,0] == 1:
+                    self.y_mod_min[max_index,0] = neg_class 
                     cur_label -= multiplier * matr_prod_x[0,max_index]
                     used_indices.append(max_index)
+
           
             if goal_label == 1 and cur_label > threshold: 
                 same = False
                 self.success = True
                 # sanity check 
-                if not np.matmul(np.transpose(np.matmul(self.lin_reg.matr_prod, np.transpose(self.y_mod_min))), np.transpose(x))[0,0] >= threshold:
+                if not np.matmul(np.transpose(np.matmul(self.lin_reg.matr_prod, self.y_mod_min)), np.transpose(x))[0,0] >= threshold:
                     print("ERROR: actual val not satisfied (trying to maximize label)")
             elif goal_label == neg_class and cur_label < threshold: 
                 same = False
                 self.success = True
                 # sanity check 
-                if not np.matmul(np.transpose(np.matmul(self.lin_reg.matr_prod, np.transpose(self.y_mod_min))), np.transpose(x))[0,0] <= threshold:
+                if not np.matmul(np.transpose(np.matmul(self.lin_reg.matr_prod, self.y_mod_min)), np.transpose(x))[0,0] <= threshold:
                     print("ERROR: actual val not satisfied (trying to minimize label)")
 
         self.perturbation_indices = used_indices
@@ -150,10 +176,13 @@ class Exact_Solver:
         else:
             self.perturbation_size = -1
 
-    def find_perturbation(self, start_index):
+    def find_perturbation(self, start_index, ignore_indices = None):
         self.success = False
         x = self.lin_reg.x_test[start_index]
-        assert(self.lin_reg.matr_prod.shape[1] == self.lin_reg.y_train.shape[1])
+        if ignore_indices is not None:
+            # TO DO remove these entries of x
+            pass
+        assert(self.lin_reg.matr_prod.shape[1] == self.lin_reg.y_train.shape[0])
         assert(self.lin_reg.matr_prod.shape[0] == x.shape[1])
 
         if self.demo_phi is not None:
