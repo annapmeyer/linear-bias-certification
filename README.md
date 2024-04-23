@@ -1,5 +1,8 @@
 # Analyzing dataset multiplicity robustness in linear regression
 
+## Citation
+If you use this code, please cite [The Dataset Multiplicity Problem: How Unreliable Data Impacts Predictions](https://dl.acm.org/doi/10.1145/3593013.3593988). 
+
 ## Downloading data
 The code to download Income and Income-Reg is in `data/folktable.ipynb`. The code to download and preprocess the LAR dataset is located in `data/process_hmda.ipynb`. 
 
